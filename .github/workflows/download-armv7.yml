@@ -1,0 +1,97 @@
+# .github/workflows/sync_release.yml
+
+name: Download-armv7 Fixed-Name Release by Tag
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *' # 每小时执行一次
+
+# 环境变量，请在此处修改为你需要监控的目标
+env:
+  # 【需要修改】目标仓库，格式为 '所有者/仓库名'
+  TARGET_REPO: 'komari-monitor/komari-agent'
+  # 【需要修改】要下载的那个固定不变的文件名
+  TARGET_FILENAME: 'komari-agent-linux-arm'
+  # 用于存储最新版本号的文件名
+  VERSION_FILE: '.latest_version'
+
+jobs:
+  sync-latest-release:
+    runs-on: ubuntu-latest
+    steps:
+      # 步骤 1: 检出你的代码库
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # 使用你配置的PAT，以便后续可以推送代码
+          token: ${{ secrets.GH_PAT }}
+
+      # 步骤 2: 获取目标仓库的最新 Release 信息
+      - name: Get latest release info
+        id: get_release
+        run: |
+          LATEST_RELEASE_JSON=$(curl -sL \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/${{ env.TARGET_REPO }}/releases/latest)
+
+          # 解析最新的版本号 (tag) 和固定文件名的下载链接
+          LATEST_TAG=$(echo "$LATEST_RELEASE_JSON" | jq -r '.tag_name')
+          # 直接通过固定的文件名来精确查找下载链接
+          DOWNLOAD_URL=$(echo "$LATEST_RELEASE_JSON" | jq -r '.assets[] | select(.name == "${{ env.TARGET_FILENAME }}") | .browser_download_url')
+
+          if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" == "null" ]; then
+            echo "Error: Could not find latest tag."
+            exit 1
+          fi
+          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" == "null" ]; then
+            echo "Error: Could not find release asset with the exact name '${{ env.TARGET_FILENAME }}'."
+            exit 1
+          fi
+          
+          # 将结果设置为后续步骤可用的输出变量
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "download_url=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
+          echo "Latest Tag: $LATEST_TAG"
+          echo "Download URL for ${{ env.TARGET_FILENAME }}: $DOWNLOAD_URL"
+
+      # 步骤 3: 比较版本号，判断是否需要更新
+      - name: Check for new version
+        id: check_version
+        run: |
+          echo "should_update=false" >> $GITHUB_OUTPUT
+          
+          # 如果版本文件不存在，或者内容与最新tag不符，则需要更新
+          if [ ! -f "${{ env.VERSION_FILE }}" ] || [ "$(cat ${{ env.VERSION_FILE }})" != "${{ steps.get_release.outputs.latest_tag }}" ]; then
+            echo "New version found (Latest: ${{ steps.get_release.outputs.latest_tag }}, Local: $(cat ${{ env.VERSION_FILE }} 2>/dev/null || echo 'none')). Proceeding to update."
+            echo "should_update=true" >> $GITHUB_OUTPUT
+          else
+            echo "Already up-to-date with tag: ${{ steps.get_release.outputs.latest_tag }}."
+          fi
+
+      # 步骤 4: 如果需要，下载新文件并更新版本记录
+      - name: Download file and update version record
+        if: steps.check_version.outputs.should_update == 'true'
+        run: |
+          echo "Downloading from ${{ steps.get_release.outputs.download_url }}"
+          # 下载新文件，并覆盖旧的本地文件
+          curl -L -o "${{ env.TARGET_FILENAME }}" "${{ steps.get_release.outputs.download_url }}"
+          echo "File downloaded as ${{ env.TARGET_FILENAME }}"
+
+          # 更新版本记录文件
+          echo "${{ steps.get_release.outputs.latest_tag }}" > "${{ env.VERSION_FILE }}"
+          echo "Updated version file ${{ env.VERSION_FILE }} with tag: ${{ steps.get_release.outputs.latest_tag }}"
+
+      # 步骤 5: 提交并推送变更
+      - name: Commit and push if changed
+        if: steps.check_version.outputs.should_update == 'true'
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
+          git add "${{ env.TARGET_FILENAME }}" "${{ env.VERSION_FILE }}"
+          
+          git commit -m "chore: Sync ${{ env.TARGET_FILENAME }} to version ${{ steps.get_release.outputs.latest_tag }}"
+          
+          git push
