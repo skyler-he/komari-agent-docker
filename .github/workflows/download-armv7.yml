@@ -14,7 +14,7 @@ env:
   # 【需要修改】要下载的那个固定不变的文件名
   TARGET_FILENAME: 'komari-agent-linux-arm'
   # 用于存储最新版本号的文件名
-  VERSION_FILE: '.latest_version'
+  VERSION_FILE: '.latest_version_armv7'
 
 jobs:
   sync-latest-release:
