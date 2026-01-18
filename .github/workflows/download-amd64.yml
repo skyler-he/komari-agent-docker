@@ -1,6 +1,6 @@
 # .github/workflows/sync_release.yml
 
-name: Download-amd64 Fixed-Name Release by Tag
+name: Download-amd64
 
 on:
   workflow_dispatch:
