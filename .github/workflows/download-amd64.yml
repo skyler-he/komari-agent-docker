@@ -5,7 +5,7 @@ name: Download-amd64 Fixed-Name Release by Tag
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 * * * *' # 每小时执行一次
+    - cron: '0 */3 * * *' # 每小时执行一次
 
 # 环境变量，请在此处修改为你需要监控的目标
 env:
