@@ -1,6 +1,6 @@
 # .github/workflows/sync_release.yml
 
-name: Download-armv7 Fixed-Name Release by Tag
+name: Download-armv7
 
 on:
   workflow_dispatch:
